@@ -1,10 +1,17 @@
 import numpy as np
 import torch
 import os
+import copy
 from torch.autograd import Variable
 from .base_model import BaseModel
 import sys
+BASE_DIR = os.path.dirname(os.path.abspath(__file__))
+sys.path.append(os.path.dirname(BASE_DIR))
+sys.path.append(os.path.join(BASE_DIR, '../network'))
+sys.path.append(os.path.join(BASE_DIR, '../inflate'))
 import pytorch_DIW_scratch
+import hourglass as hg
+from inflate.i3dense import I3DenseNet
 
 class HGModel(BaseModel):
     def name(self):
@@ -14,12 +21,27 @@ class HGModel(BaseModel):
         BaseModel.initialize(self, opt)
 
         print("===========================================LOADING Hourglass NETWORK====================================================")
-        model = pytorch_DIW_scratch.pytorch_DIW_scratch
+        model = hg.Model
         model= torch.nn.parallel.DataParallel(model, device_ids = [0,1])
-        model_parameters = self.load_network(model, 'G', 'best_vanila')
-        model.load_state_dict(model_parameters)
-        self.netG = model.cuda()
+        model_parameters = self.load_network(model, 'G', 'best_generalization')
+	
+	# Modifying the names of layers in state dictionary to allow for weight initialization from the new network
+	pretrained_params_names = []
+	for name, param in model.state_dict().items():
+    		pretrained_params_names.append(name)	
+	from collections import OrderedDict
+	new_state_dict = OrderedDict()
+	for k, v in model_parameters.items():
+    		name = pretrained_params_names.pop(0)
+    		new_state_dict[name] = v
 
+        model.load_state_dict(new_state_dict)
+	
+	#Inflate to 3D network
+	#frames = 16 # must be a multiple of 8
+	#i3net = I3DenseNet(copy.deepcopy(model), frames, inflate_block_convs=True)
+	#print(i3net)
+        self.netG = model.cuda()
 
     def batch_classify(self, z_A_arr, z_B_arr, ground_truth ):
         threashold = 1.1

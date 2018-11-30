@@ -1,3 +1,6 @@
+import torch
+from network.layers.inception import inception
+
 def inflate_conv(conv2d,
                  time_dim=3,
                  time_padding=0,
@@ -29,24 +32,9 @@ def inflate_conv(conv2d,
         weight_3d = weight_3d / time_dim
 
     # Assign new params
-    conv3d.weight = Parameter(weight_3d)
+    conv3d.weight = torch.nn.Parameter(weight_3d)
     conv3d.bias = conv2d.bias
     return conv3d
-
-
-def inflate_linear(linear2d, time_dim):
-    """
-    Args:
-        time_dim: final time dimension of the features
-    """
-    linear3d = torch.nn.Linear(linear2d.in_features * time_dim,
-                               linear2d.out_features)
-    weight3d = linear2d.weight.data.repeat(1, time_dim)
-    weight3d = weight3d / time_dim
-
-    linear3d.weight = Parameter(weight3d)
-    linear3d.bias = linear2d.bias
-    return linear3d
 
 
 def inflate_batch_norm(batch2d):
@@ -57,7 +45,7 @@ def inflate_batch_norm(batch2d):
     batch3d = torch.nn.BatchNorm3d(batch2d.num_features)
     # retrieve 3d _check_input_dim function
     batch2d._check_input_dim = batch3d._check_input_dim
-    return batch2d
+    return batch3d
 
 
 def inflate_pool(pool2d,
@@ -84,3 +72,52 @@ def inflate_pool(pool2d,
         raise ValueError(
             '{} is not among known pooling classes'.format(type(pool2d)))
     return pool3d
+
+
+def inflate_upsample(upsample2d,
+                     time_dim=1):
+    scale_factor_dim = (time_dim, upsample2d.scale_factor, upsample2d.scale_factor)
+    upsample3d = torch.nn.Upsample(scale_factor=scale_factor_dim, mode='nearest')
+    return upsample3d
+
+
+class inception3d(torch.nn.Module):
+    def __init__(self, inception, input_size, config):
+        self.config = config
+        super(inception3d, self).__init__()
+        self.convs = torch.nn.ModuleList()
+
+        # Base 1*1 conv layer
+        self.convs.append(torch.nn.Sequential(
+            #torch.nn.Conv3d(input_size, config[0][0], 1),
+            inflate_conv(inception.convs[0][0], time_dim=1),
+            torch.nn.BatchNorm3d(config[0][0], affine=False),
+            torch.nn.ReLU(True),
+        ))
+
+        # Additional layers
+        for i in range(1, len(config)):
+            filter = config[i][0]
+            pad = int((filter-1) / 2)
+            out_a = config[i][1]
+            out_b = config[i][2]
+            conv = torch.nn.Sequential(
+                #torch.nn.Conv3d(input_size, out_a, 1),
+                inflate_conv(inception.convs[i][0], time_dim=1),
+                torch.nn.BatchNorm3d(out_a, affine=False),
+                torch.nn.ReLU(True),
+                #torch.nn.Conv3d(out_a, out_b, filter, padding=pad),
+                inflate_conv(inception.convs[i][3], time_dim=filter, time_padding=pad),
+                torch.nn.BatchNorm3d(out_b, affine=False),
+                torch.nn.ReLU(True)
+                )
+            self.convs.append(conv)
+
+    def __repr__(self):
+        return "inception3d" + str(self.config)
+
+    def forward(self, x):
+        ret = []
+        for conv in (self.convs):
+            ret.append(conv(x))
+        return torch.cat(ret,dim=1)

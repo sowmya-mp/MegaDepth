@@ -1,7 +1,7 @@
 import torch
 from torch import nn
 from torch.autograd import Variable
-from layers.inception import  inception
+from layers.inception import inception
 
 class Channels1(nn.Module):
 	def __init__(self):

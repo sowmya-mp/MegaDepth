@@ -7,13 +7,14 @@ sys.path.append(os.path.abspath(os.path.join(os.path.dirname(__file__), '..')))
 
 class inception(nn.Module):
 	def __init__(self, input_size, config):
+		self.input_size = input_size
 		self.config = config
 		super(inception,self).__init__()
 		self.convs = nn.ModuleList()
 
 		# Base 1*1 conv layer
 		self.convs.append(nn.Sequential(
-			nn.Conv2d(input_size, config[0][0],1),
+			nn.Conv2d(self.input_size, config[0][0],1),
 			nn.BatchNorm2d(config[0][0],affine=False),
 			nn.ReLU(True),
 		))
@@ -25,7 +26,7 @@ class inception(nn.Module):
 			out_a = config[i][1]
 			out_b = config[i][2]
 			conv = nn.Sequential(
-				nn.Conv2d(input_size, out_a,1),
+				nn.Conv2d(self.input_size, out_a,1),
 				nn.BatchNorm2d(out_a,affine=False),
 				nn.ReLU(True),
 				nn.Conv2d(out_a, out_b, filt,padding=pad),
